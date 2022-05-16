@@ -4,15 +4,44 @@ using System.Text.RegularExpressions;
 using Ei;
 using Google.Protobuf;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
-//Can use ShareX screenshot to get screen coords
-int startX = 2870;
-int startY = 115;
-int endX = 3570;
-int endY = 1333;
+/*------------ OVERVIEW ------------
+This program serves to watch for new coops posted to the Egg, Inc Discord (either the #ads-only-standard or 
+#ads-only-elite channels) and report back what the highest roles are - ensuring you can pick the best coop.
+It is against the ToS of Discord to automatically interact with a server without a bot being added to that
+server, so this works by
+1. Taking a screenshot of the Discord channel
+2. Sending to ocr.space for text recognition
+3. Parsing that text recognition for eicoop.netlify.app urls (thereby giving us the contract id & coop id)
+4. Using that contract id & coop id in an API request to the wasmegg Egg, Inc API to check the 
+   status of the coop
+5. Reporting back to the console with that status (contract id, coop id, open spots, and highest role)
+6. Repeat
 
+- Found coops will be stored and checked again every interval (so they will still be checked even if
+  the url is no longer in the screenshot)
+- Full or invalid coops (because sometimes OCR messes up) will be stored so they aren't checked again
+- There is an option to filter by soul power (reference table below) so you will only see coops that
+  have a highest role above a certain threshold
+----------------------------------*/
+
+
+//------------ SETTINGS ------------
+//Coordinates to take the screenshot (can use ShareX screenshot to get screen coords)
+int startX = -2084;
+int startY = 88;
+int endX = -1284;
+int endY = 1312;
+
+//apiKey for ocr.space
+string ocrSpaceApiToken = File.ReadAllText("settings.txt");
+
+//Interval to check for new coops
 TimeSpan interval = TimeSpan.FromSeconds(30);
+
+//[Optional] soul power filter (only return coops where the highest role is above this SP - set to -1 to not use)
+int soulPowerFilter = 22;
+//----------------------------------
 
 Dictionary<int, string> roles = new Dictionary<int, string>
 {
@@ -82,12 +111,12 @@ while (true) //MAIN LOOP
         }
 
         bitmap.Save("screenshot.jpg", ImageFormat.Jpeg);
-        string ocr = await DoOCR("screenshot.jpg");
+        string ocr = await DoOCR("screenshot.jpg", ocrSpaceApiToken);
         IEnumerable<string> parsedCoops = ParseCoops(ocr);
         IEnumerable<string> newCoops = parsedCoops.Except(openCoops).Except(invalidOrFullCoopMatches);
         if (newCoops.Any())
         {
-            Console.WriteLine($"NEW COOPS:\n\n{string.Join("\n", newCoops)}\n");
+            Console.WriteLine($"NEW COOPS:\n  {string.Join("\n  ", newCoops)}\n");
             openCoops.AddRange(newCoops);
         }
     }
@@ -101,9 +130,9 @@ while (true) //MAIN LOOP
             openCoops.Remove(contractCoopId);
             invalidOrFullCoopMatches.Add(contractCoopId);
         }
-        else
+        else if (coopStats.HighestSoulPower > soulPowerFilter)
         {
-            Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {SoulPowerToFarmerRole(coopStats.HighestSoulPower)}");
+            Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {SoulPowerToFarmerRole(coopStats.HighestSoulPower)} (SP: {Math.Round(coopStats.HighestSoulPower, 3)})");
         }
     }
 
@@ -112,7 +141,7 @@ while (true) //MAIN LOOP
     Thread.Sleep(interval);
 }
 
-static async Task<string> DoOCR(string fileName)
+static async Task<string> DoOCR(string fileName, string apikey)
 {
     string resp = null;
     try
@@ -121,7 +150,7 @@ static async Task<string> DoOCR(string fileName)
         httpClient.Timeout = new TimeSpan(1, 1, 1);
 
         MultipartFormDataContent form = new MultipartFormDataContent();
-        form.Add(new StringContent("K88095770188957"), "apikey"); //Added api key in form data
+        form.Add(new StringContent(apikey), "apikey"); //Added api key in form data
         form.Add(new StringContent("eng"), "language");
 
         form.Add(new StringContent("2"), "ocrengine"); 
