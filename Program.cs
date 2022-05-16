@@ -110,7 +110,7 @@ while (true) //MAIN LOOP
             openCoops.Remove(contractCoopId);
             invalidOrFullCoopMatches.Add(contractCoopId);
         }
-        else if (coopStats.HighestSoulPower > settings.soulPowerFilter)
+        else if (coopStats.HighestSoulPower > (double)settings.soulPowerFilter)
         {
             Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {SoulPowerToFarmerRole(coopStats.HighestSoulPower)} (SP: {Math.Round(coopStats.HighestSoulPower, 3)})");
             printSpace = true;
