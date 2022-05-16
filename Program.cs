@@ -25,23 +25,7 @@ server, so this works by
   have a highest role above a certain threshold
 ----------------------------------*/
 
-
-//------------ SETTINGS ------------
-//Coordinates to take the screenshot (can use ShareX screenshot to get screen coords)
-int startX = -2084;
-int startY = 88;
-int endX = -1284;
-int endY = 1312;
-
-//apiKey for ocr.space
-string ocrSpaceApiToken = File.ReadAllText("settings.txt");
-
-//Interval to check for new coops
-TimeSpan interval = TimeSpan.FromSeconds(30);
-
-//[Optional] soul power filter (only return coops where the highest role is above this SP - set to -1 to not use)
-int soulPowerFilter = 22;
-//----------------------------------
+dynamic settings = JsonConvert.DeserializeObject<dynamic>(File.ReadAllText("settings.json"));
 
 Dictionary<int, string> roles = new Dictionary<int, string>
 {
@@ -103,22 +87,18 @@ List<string> openCoops = new List<string>();
 List<string> invalidOrFullCoopMatches = new List<string>(); //"coops" found by OCR that are full or don"t actually exist
 while (true) //MAIN LOOP
 {
-    using (var bitmap = new Bitmap(endX - startX, endY - startY))
-    {
-        using (var g = Graphics.FromImage(bitmap))
-        {
-            g.CopyFromScreen(startX, startY, 0, 0, bitmap.Size, CopyPixelOperation.SourceCopy);
-        }
+    bool printSpace = false;
 
-        bitmap.Save("screenshot.jpg", ImageFormat.Jpeg);
-        string ocr = await DoOCR("screenshot.jpg", ocrSpaceApiToken);
-        IEnumerable<string> parsedCoops = ParseCoops(ocr);
-        IEnumerable<string> newCoops = parsedCoops.Except(openCoops).Except(invalidOrFullCoopMatches);
-        if (newCoops.Any())
-        {
-            Console.WriteLine($"NEW COOPS:\n  {string.Join("\n  ", newCoops)}\n");
-            openCoops.AddRange(newCoops);
-        }
+    TakeScreenshot(settings.screenshotArea.startX, settings.screenshotArea.startY, settings.screenshotArea.endX, settings.screenshotArea.endY);
+
+    string ocr = await DoOCR("screenshot.jpg", settings.ocrSpaceApiKey);
+    IEnumerable<string> parsedCoops = ParseCoops(ocr);
+    IEnumerable<string> newCoops = parsedCoops.Except(openCoops).Except(invalidOrFullCoopMatches);
+    if (newCoops.Any())
+    {
+        Console.WriteLine($"NEW COOPS:\n  {string.Join("\n  ", newCoops)}\n");
+        openCoops.AddRange(newCoops);
+        printSpace = true;
     }
 
     foreach (string contractCoopId in openCoops.ToList())
@@ -130,15 +110,32 @@ while (true) //MAIN LOOP
             openCoops.Remove(contractCoopId);
             invalidOrFullCoopMatches.Add(contractCoopId);
         }
-        else if (coopStats.HighestSoulPower > soulPowerFilter)
+        else if (coopStats.HighestSoulPower > settings.soulPowerFilter)
         {
             Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {SoulPowerToFarmerRole(coopStats.HighestSoulPower)} (SP: {Math.Round(coopStats.HighestSoulPower, 3)})");
+            printSpace = true;
         }
     }
 
-    Console.WriteLine(); //Spacing
+    if (printSpace)
+    {
+        Console.WriteLine(); //Spacing
+    }
 
-    Thread.Sleep(interval);
+    Thread.Sleep(TimeSpan.FromSeconds((double)settings.intervalSeconds));
+}
+
+static void TakeScreenshot(int startX, int startY, int endX, int endY)
+{
+    using (var bitmap = new Bitmap(endX - startX, endY - startY))
+    {
+        using (var g = Graphics.FromImage(bitmap))
+        {
+            g.CopyFromScreen(startX, startY, 0, 0, bitmap.Size, CopyPixelOperation.SourceCopy);
+        }
+
+        bitmap.Save("screenshot.jpg", ImageFormat.Jpeg);
+    }
 }
 
 static async Task<string> DoOCR(string fileName, string apikey)
@@ -150,9 +147,8 @@ static async Task<string> DoOCR(string fileName, string apikey)
         httpClient.Timeout = new TimeSpan(1, 1, 1);
 
         MultipartFormDataContent form = new MultipartFormDataContent();
-        form.Add(new StringContent(apikey), "apikey"); //Added api key in form data
+        form.Add(new StringContent(apikey), "apikey");
         form.Add(new StringContent("eng"), "language");
-
         form.Add(new StringContent("2"), "ocrengine"); 
         form.Add(new StringContent("true"), "scale");
         form.Add(new StringContent("true"), "istable");
@@ -166,44 +162,27 @@ static async Task<string> DoOCR(string fileName, string apikey)
         HttpResponseMessage response = await httpClient.PostAsync("https://api.ocr.space/Parse/Image", form);
 
         resp = await response.Content.ReadAsStringAsync();
-        // var json = JObject.Parse(strContent);
-
-        // if (json.Value<int>("OCRExitCode") == 1)
-        // {
-        //     string results = "";
-        //     foreach (JObject parsedResult in json["ParsedResults"])
-        //     {
-        //         results += parsedResult
-        //     }
-
-        //     for (int i = 0; i < ocrResult.ParsedResults.Count() ; i++)
-        //     {
-        //         txtResult.Text = txtResult.Text + ocrResult.ParsedResults[i].ParsedText ;
-        //     }
-        // }
-
-        //Todo: I would prefer to use Newtonsoft over the Rootobject stuff
-        Rootobject ocrResult = JsonConvert.DeserializeObject<Rootobject>(resp);
+        dynamic ocrResult = JsonConvert.DeserializeObject<dynamic>(resp);
 
         if (ocrResult.OCRExitCode == 1)
         {
             string results = "";
-            for (int i = 0; i < ocrResult.ParsedResults.Count() ; i++)
+            foreach (var parsedResult in ocrResult.ParsedResults)
             {
-                results += ocrResult.ParsedResults[i].ParsedText ;
+                results += parsedResult.ParsedText;
             }
 
             return results;
         }
         else
         {
-            Console.WriteLine($"OCR error: {resp}");
+            Console.WriteLine($"OCR error: {ocrResult.ErrorMessage[0]}");
         }
     }
     catch (Exception exception)
     {
         Console.WriteLine($"OCR exception: {exception.Message}\n{exception.StackTrace}");
-        Console.Write($"OCR response: {resp}");
+        Console.WriteLine($"OCR response: {resp}");
     }
 
     return "";
@@ -294,21 +273,4 @@ public class CoopStats
 {
     public double HighestSoulPower { get; set; }
     public int OpenSpots { get; set; }
-}
-
-public class Rootobject
-{
-    public Parsedresult[] ParsedResults { get; set; }
-    public int OCRExitCode { get; set; }
-    public bool IsErroredOnProcessing { get; set; }
-    public string[] ErrorMessage { get; set; }
-    public string ErrorDetails { get; set; }
-}
-
-public class Parsedresult
-{
-    public object FileParseExitCode { get; set; }
-    public string ParsedText { get; set; }
-    public string ErrorMessage { get; set; }
-    public string ErrorDetails { get; set; }
 }
