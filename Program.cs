@@ -105,14 +105,20 @@ while (true) //MAIN LOOP
     {
         string[] contractAndCoopIds = contractCoopId.Split(":");
         CoopStats coopStats = await GetCoopStats(contractAndCoopIds[0], contractAndCoopIds[1]);
+        double maxSoulPower = coopStats != null ? coopStats.SoulPowers.Max() : -1;
         if (coopStats == null || coopStats.OpenSpots == 0)
         {
             openCoops.Remove(contractCoopId);
             invalidOrFullCoopMatches.Add(contractCoopId);
         }
-        else if (coopStats.HighestSoulPower > (double)settings.soulPowerFilter)
+        else if (maxSoulPower > (double)settings.soulPowerFilter)
         {
-            Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {SoulPowerToFarmerRole(coopStats.HighestSoulPower)} (SP: {Math.Round(coopStats.HighestSoulPower, 3)})");
+            Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {SoulPowerToFarmerRole(maxSoulPower)} (SP: {Math.Round(maxSoulPower, 3)})");
+            if ((double)settings.soulPowerFilter > -1)
+            {
+                Console.WriteLine($"  Roles above filter: {string.Join(", ", coopStats.SoulPowers.Where(sp => sp > (double)settings.soulPowerFilter).Select(sp => SoulPowerToFarmerRole(sp)))}");
+            }
+
             printSpace = true;
         }
     }
@@ -245,7 +251,7 @@ async Task<CoopStats> GetCoopStats(string contractId, string coopId)
         return new CoopStats
         {
             OpenSpots = (int)firstContactResponse.Backup.Contracts.Contracts.FirstOrDefault(c => c.Contract.Identifier == contractId).Contract.MaxCoopSize - contractCoopStatusResponse.Contributors.Count,
-            HighestSoulPower = contractCoopStatusResponse.Contributors.MaxBy(c => c.SoulPower).SoulPower,
+            SoulPowers = contractCoopStatusResponse.Contributors.Select(c => c.SoulPower),
         };
     }
     catch
@@ -271,6 +277,6 @@ async Task<string> PostRequest(string url, FormUrlEncodedContent json)
 
 public class CoopStats
 {
-    public double HighestSoulPower { get; set; }
+    public IEnumerable<double> SoulPowers { get; set; }
     public int OpenSpots { get; set; }
 }
