@@ -2,7 +2,6 @@
 using System.Drawing.Imaging;
 using System.Text.RegularExpressions;
 using Ei;
-using Google.Protobuf;
 using Newtonsoft.Json;
 
 /*------------ OVERVIEW ------------
@@ -26,62 +25,6 @@ server, so this works by
 ----------------------------------*/
 
 dynamic settings = JsonConvert.DeserializeObject<dynamic>(File.ReadAllText("settings.json"));
-
-Dictionary<int, string> roles = new Dictionary<int, string>
-{
-  { 0, "Farmer" },
-  { 1, "Farmer II" },
-  { 2, "Farmer III" },
-  { 3, "Kilofarmer" },
-  { 4, "Kilofarmer II" },
-  { 5, "Kilofarmer III" },
-  { 6, "Megafarmer" },
-  { 7, "Megafarmer II" },
-  { 8, "Megafarmer III" },
-  { 9, "Gigafarmer" },
-  { 10, "Gigafarmer II" },
-  { 11, "Gigafarmer III" },
-  { 12, "Terafarmer" },
-  { 13, "Terafarmer II" },
-  { 14, "Terafarmer III" },
-  { 15, "Petafarmer" },
-  { 16, "Petafarmer II" },
-  { 17, "Petafarmer III" },
-  { 18, "Exafarmer" },
-  { 19, "Exafarmer II" },
-  { 20, "Exafarmer III" },
-  { 21, "Zettafarmer" },
-  { 22, "Zettafarmer II" },
-  { 23, "Zettafarmer III" },
-  { 24, "Yottafarmer" },
-  { 25, "Yottafarmer II" },
-  { 26, "Yottafarmer III" },
-  { 27, "Xennafarmer" },
-  { 28, "Xennafarmer II" },
-  { 29, "Xennafarmer III" },
-  { 30, "Weccafarmer" },
-  { 31, "Weccafarmer II" },
-  { 32, "Weccafarmer III" },
-  { 33, "Vendafarmer" },
-  { 34, "Vendafarmer II" },
-  { 35, "Vendafarmer III" },
-  { 36, "Uadafarmer" },
-  { 37, "Uadafarmer II" },
-  { 38, "Uadafarmer III" },
-  { 39, "Treidafarmer" },
-  { 40, "Treidafarmer II" },
-  { 41, "Treidafarmer III" },
-  { 42, "Quadafarmer" },
-  { 43, "Quadafarmer II" },
-  { 44, "Quadafarmer III" },
-  { 45, "Pendafarmer" },
-  { 46, "Pendafarmer II" },
-  { 47, "Pendafarmer III" },
-  { 48, "Exedafarmer" },
-  { 49, "Exedafarmer II" },
-  { 50, "Exedafarmer III" },
-  { 51, "Infinifarmer" },
-};
 
 List<string> openCoops = new List<string>();
 List<string> invalidOrFullCoopMatches = new List<string>(); //"coops" found by OCR that are full or don"t actually exist
@@ -113,10 +56,10 @@ while (true) //MAIN LOOP
         }
         else if (maxSoulPower > (double)settings.soulPowerFilter)
         {
-            Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {SoulPowerToFarmerRole(maxSoulPower)} (SP: {Math.Round(maxSoulPower, 3)})");
+            Console.WriteLine($"{contractCoopId} currently has {coopStats.OpenSpots} open spots and the highest role of {EggIncApi.SoulPowerToFarmerRole(maxSoulPower)} (SP: {Math.Round(maxSoulPower, 3)})");
             if ((double)settings.soulPowerFilter > -1)
             {
-                Console.WriteLine($"  Roles above filter: {string.Join(", ", coopStats.SoulPowers.Where(sp => sp > (double)settings.soulPowerFilter).Select(sp => SoulPowerToFarmerRole(sp)))}");
+                Console.WriteLine($"  Roles above filter: {string.Join(", ", coopStats.SoulPowers.Where(sp => sp > (double)settings.soulPowerFilter).Select(sp => EggIncApi.SoulPowerToFarmerRole(sp)))}");
             }
 
             printSpace = true;
@@ -208,45 +151,8 @@ async Task<CoopStats> GetCoopStats(string contractId, string coopId)
 {
     try
     {
-        ContractCoopStatusRequest coopStatusRequest = new ContractCoopStatusRequest();
-        coopStatusRequest.ContractIdentifier = contractId;
-        coopStatusRequest.CoopIdentifier = coopId;
-
-        byte[] bytes;
-        using (var stream = new MemoryStream())
-        {
-            coopStatusRequest.WriteTo(stream);
-            bytes = stream.ToArray();
-        }
-
-        string baseUrl = "https://wasmegg.zw.workers.dev/?url="; 
-        string response = await PostRequest(baseUrl + "https://www.auxbrain.com/ei/coop_status", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            { "data", Convert.ToBase64String(bytes) }
-        }));
-
-        AuthenticatedMessage authenticatedMessage = AuthenticatedMessage.Parser.ParseFrom(Convert.FromBase64String(response));
-
-        ContractCoopStatusResponse contractCoopStatusResponse = ContractCoopStatusResponse.Parser.ParseFrom(authenticatedMessage.Message);
-
-        EggIncFirstContactRequest firstContactRequest = new EggIncFirstContactRequest();
-        firstContactRequest.EiUserId = contractCoopStatusResponse.Contributors[0].UserId;
-        firstContactRequest.ClientVersion = 36;
-
-        using (var stream = new MemoryStream())
-        {
-            firstContactRequest.WriteTo(stream);
-            bytes = stream.ToArray();
-        }
-
-        response = await PostRequest(baseUrl + "https://www.auxbrain.com/ei/first_contact", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            { "data", Convert.ToBase64String(bytes) }
-        }));
-
-        authenticatedMessage = AuthenticatedMessage.Parser.ParseFrom(Convert.FromBase64String(response));
-
-        EggIncFirstContactResponse firstContactResponse = EggIncFirstContactResponse.Parser.ParseFrom(authenticatedMessage.Message);
+        ContractCoopStatusResponse contractCoopStatusResponse = await EggIncApi.GetCoopStatus(contractId, coopId);
+        EggIncFirstContactResponse firstContactResponse = await EggIncApi.GetFirstContact(contractCoopStatusResponse.Contributors[0].UserId);
 
         return new CoopStats
         {
@@ -258,20 +164,6 @@ async Task<CoopStats> GetCoopStats(string contractId, string coopId)
     {
         Console.WriteLine($"Exception encountered when checking stats of {contractId}:{coopId} (maybe OCR messed up the recognition?)");
         return null;
-    }
-}
-
-string SoulPowerToFarmerRole(double soulPower)
-{
-    return roles[(int)Math.Floor(soulPower)];
-}
-
-async Task<string> PostRequest(string url, FormUrlEncodedContent json)
-{
-    using (var client = new HttpClient())
-    {
-        var response = await client.PostAsync(url, json);
-        return await response.Content.ReadAsStringAsync();
     }
 }
 
