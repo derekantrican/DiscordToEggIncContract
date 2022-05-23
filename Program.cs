@@ -93,7 +93,7 @@ static async Task<string> DoOCR(string fileName, string apikey)
     try
     {
         HttpClient httpClient = new HttpClient();
-        httpClient.Timeout = new TimeSpan(1, 1, 1);
+        httpClient.Timeout = TimeSpan.FromMinutes(1);
 
         MultipartFormDataContent form = new MultipartFormDataContent();
         form.Add(new StringContent(apikey), "apikey");
@@ -102,7 +102,7 @@ static async Task<string> DoOCR(string fileName, string apikey)
         form.Add(new StringContent("true"), "scale");
         form.Add(new StringContent("true"), "istable");
 
-        if (string.IsNullOrEmpty(fileName) == false)
+        if (!string.IsNullOrEmpty(fileName))
         {
             byte[] imageData = File.ReadAllBytes(fileName);
             form.Add(new ByteArrayContent(imageData, 0, imageData.Length), "image", "image.jpg");
