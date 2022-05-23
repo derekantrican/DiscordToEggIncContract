@@ -49,7 +49,7 @@ while (true) //MAIN LOOP
         string[] contractAndCoopIds = contractCoopId.Split(":");
         CoopStats coopStats = await GetCoopStats(contractAndCoopIds[0], contractAndCoopIds[1]);
         double maxSoulPower = coopStats != null ? coopStats.SoulPowers.Max() : -1;
-        if (coopStats == null || coopStats.OpenSpots == 0)
+        if (coopStats == null || coopStats.OpenSpots <= 0)
         {
             openCoops.Remove(contractCoopId);
             invalidOrFullCoopMatches.Add(contractCoopId);
